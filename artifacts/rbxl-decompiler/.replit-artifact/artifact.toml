@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "RBXL Decompiler"
+version = "1.0.0"
+id = "artifacts/rbxl-decompiler"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23332
+
+[services.development]
+run = "pnpm --filter @workspace/rbxl-decompiler run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/rbxl-decompiler", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/rbxl-decompiler/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23332"
+BASE_PATH = "/"

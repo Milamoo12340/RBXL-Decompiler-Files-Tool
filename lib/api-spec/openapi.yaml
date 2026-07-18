@@ -3,20 +3,25 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: RBXL Decompiler API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: sessions
+    description: Decompile session operations
+  - name: scripts
+    description: Script operations within a session
+  - name: analysis
+    description: Game mechanics analysis
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +29,360 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /sessions:
+    get:
+      operationId: listSessions
+      tags: [sessions]
+      summary: List all decompile sessions
+      responses:
+        "200":
+          description: List of sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DecompileSession"
+
+  /sessions/{sessionId}:
+    get:
+      operationId: getSession
+      tags: [sessions]
+      summary: Get session details
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Session details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecompileSession"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteSession
+      tags: [sessions]
+      summary: Delete a session and all its scripts
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /sessions/{sessionId}/scripts:
+    get:
+      operationId: getSessionScripts
+      tags: [scripts]
+      summary: List all scripts extracted from a session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of scripts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Script"
+
+  /sessions/{sessionId}/scripts/{scriptId}:
+    get:
+      operationId: getScript
+      tags: [scripts]
+      summary: Get full script content
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: scriptId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Script with full content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScriptWithContent"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /sessions/{sessionId}/stats:
+    get:
+      operationId: getSessionStats
+      tags: [sessions]
+      summary: Get stats summary for a session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Session statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionStats"
+
+  /sessions/{sessionId}/analysis:
+    get:
+      operationId: getSessionAnalysis
+      tags: [analysis]
+      summary: Get game mechanics analysis for a session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Full analysis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionAnalysis"
+
+  /sessions/{sessionId}/topics:
+    get:
+      operationId: getSessionTopics
+      tags: [analysis]
+      summary: List all discovered topics in the session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of topics
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Topic"
+
+  /sessions/{sessionId}/topics/{topicId}:
+    get:
+      operationId: getTopicDetail
+      tags: [analysis]
+      summary: Get detailed topic data (hatch chances, egg rates, etc.)
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Topic details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopicDetail"
+
 components:
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
         status:
           type: string
-      required:
-        - status
 
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    DecompileSession:
+      type: object
+      required: [id, originalName, status, scriptCount, createdAt]
+      properties:
+        id:
+          type: integer
+        originalName:
+          type: string
+        status:
+          type: string
+          enum: [pending, processing, complete, error]
+        scriptCount:
+          type: integer
+        errorMessage:
+          type: ["string", "null"]
+        fileSizeBytes:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+
+    Script:
+      type: object
+      required: [id, sessionId, name, scriptType, scriptPath, sizeBytes, isBytecode, createdAt]
+      properties:
+        id:
+          type: integer
+        sessionId:
+          type: integer
+        name:
+          type: string
+        scriptType:
+          type: string
+          enum: [Script, LocalScript, ModuleScript]
+        scriptPath:
+          type: string
+        sizeBytes:
+          type: integer
+        isBytecode:
+          type: boolean
+        createdAt:
+          type: string
+
+    ScriptWithContent:
+      type: object
+      required: [id, sessionId, name, scriptType, scriptPath, sizeBytes, isBytecode, content, createdAt]
+      properties:
+        id:
+          type: integer
+        sessionId:
+          type: integer
+        name:
+          type: string
+        scriptType:
+          type: string
+          enum: [Script, LocalScript, ModuleScript]
+        scriptPath:
+          type: string
+        sizeBytes:
+          type: integer
+        isBytecode:
+          type: boolean
+        content:
+          type: string
+        createdAt:
+          type: string
+
+    SessionStats:
+      type: object
+      required: [sessionId, totalScripts, scriptTypes, totalSizeBytes, bytecodeCount, topScripts]
+      properties:
+        sessionId:
+          type: integer
+        totalScripts:
+          type: integer
+        scriptTypes:
+          type: object
+          additionalProperties:
+            type: integer
+        totalSizeBytes:
+          type: integer
+        bytecodeCount:
+          type: integer
+        topScripts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Script"
+
+    SessionAnalysis:
+      type: object
+      required: [sessionId, topicCount, topics]
+      properties:
+        sessionId:
+          type: integer
+        topicCount:
+          type: integer
+        topics:
+          type: array
+          items:
+            $ref: "#/components/schemas/Topic"
+
+    Topic:
+      type: object
+      required: [id, sessionId, name, category, matchCount, createdAt]
+      properties:
+        id:
+          type: integer
+        sessionId:
+          type: integer
+        name:
+          type: string
+        category:
+          type: string
+          enum: [hatch_chances, egg_rates, pets, game_mechanics, currencies, shops, events, other]
+        matchCount:
+          type: integer
+        createdAt:
+          type: string
+
+    TopicDetail:
+      type: object
+      required: [id, sessionId, name, category, matchCount, findings, createdAt]
+      properties:
+        id:
+          type: integer
+        sessionId:
+          type: integer
+        name:
+          type: string
+        category:
+          type: string
+        matchCount:
+          type: integer
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/TopicFinding"
+        createdAt:
+          type: string
+
+    TopicFinding:
+      type: object
+      required: [scriptName, scriptId, lineNumber, snippet]
+      properties:
+        scriptName:
+          type: string
+        scriptId:
+          type: integer
+        lineNumber:
+          type: integer
+        snippet:
+          type: string
+        value:
+          type: ["string", "null"]
