@@ -8,6 +8,8 @@ import Home from '@/pages/home';
 import SessionViewer from '@/pages/session/viewer';
 import SessionAnalysis from '@/pages/session/analysis';
 import SessionStats from '@/pages/session/stats';
+import SessionEvent from '@/pages/session/event';
+import SessionFlags from '@/pages/session/flags';
 
 const queryClient = new QueryClient();
 
@@ -16,7 +18,9 @@ function Router() {
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/sessions/:id" component={SessionViewer} />
+      <Route path="/sessions/:id/event" component={SessionEvent} />
       <Route path="/sessions/:id/analysis" component={SessionAnalysis} />
+      <Route path="/sessions/:id/flags" component={SessionFlags} />
       <Route path="/sessions/:id/stats" component={SessionStats} />
       <Route component={NotFound} />
     </Switch>
