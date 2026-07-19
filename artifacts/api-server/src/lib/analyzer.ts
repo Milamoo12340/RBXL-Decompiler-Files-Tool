@@ -1,6 +1,6 @@
 /**
- * Game mechanics analyzer — scans Lua source for key patterns
- * (hatch chances, egg rates, pets, currencies, shops, events, etc.)
+ * Game mechanics analyzer — scans Lua source for key patterns.
+ * Captures full multi-line table blocks when a match opens a `{`.
  */
 
 export interface Finding {
@@ -30,6 +30,10 @@ const TOPIC_DEFS: TopicDef[] = [
       /hatch_rate/i,
       /droprate/i,
       /drop_rate/i,
+      // PS99-style: `pets = {` inside an egg module
+      /^\s*pets\s*=\s*\{/,
+      // inline pet entry: {"PetName", number}
+      /\{\s*"[^"]+"\s*,\s*[\d.]+\s*\}/,
     ],
   },
   {
@@ -39,12 +43,14 @@ const TOPIC_DEFS: TopicDef[] = [
       /\begg\b.*rate/i,
       /EggData/i,
       /EggConfig/i,
-      /\beggs\s*=/,
+      /\beggs\s*=\s*\{/,
       /EggTable/i,
       /EggChance/i,
       /OpenEgg/i,
       /eggpool/i,
       /\beggweight/i,
+      /overrideCost/i,
+      /isCustomEgg/i,
     ],
   },
   {
@@ -53,7 +59,6 @@ const TOPIC_DEFS: TopicDef[] = [
     patterns: [
       /PetData/i,
       /PetConfig/i,
-      /\bpets\s*=/,
       /PetTable/i,
       /petName/i,
       /\bpetRarity/i,
@@ -62,7 +67,6 @@ const TOPIC_DEFS: TopicDef[] = [
       /petPassive/i,
       /PetShiny/i,
       /\bgolden\s*pet/i,
-      /\brainbow\s*pet/i,
       /\bhuge\s*pet/i,
     ],
   },
@@ -83,6 +87,9 @@ const TOPIC_DEFS: TopicDef[] = [
       /\bspawnrate\b/i,
       /\bspawn_rate\b/i,
       /\bdamage\b.*=\s*[\d.]+/i,
+      /StrengthPowerBoost/i,
+      /ZoneNumberRequired/i,
+      /RebirthUnlocks/i,
     ],
   },
   {
@@ -99,6 +106,7 @@ const TOPIC_DEFS: TopicDef[] = [
       /AddCurrency/i,
       /RemoveCurrency/i,
       /\bcoinMultiplier\b/i,
+      /MarbleCoins/i,
     ],
   },
   {
@@ -155,6 +163,28 @@ export interface AnalysisResult {
   findings: Finding[];
 }
 
+/** Capture the full Lua table block starting at line i (which ends with `{`). */
+function captureBlock(lines: string[], startLine: number): string {
+  let depth = 0;
+  for (const ch of lines[startLine]) {
+    if (ch === "{") depth++;
+    if (ch === "}") depth--;
+  }
+  const collected: string[] = [lines[startLine]];
+  for (let j = startLine + 1; j < lines.length; j++) {
+    const l = lines[j];
+    collected.push(l);
+    for (const ch of l) {
+      if (ch === "{") depth++;
+      if (ch === "}") depth--;
+    }
+    if (depth <= 0) break;
+    // Hard cap so we never collect > 60 lines for one finding
+    if (collected.length >= 60) break;
+  }
+  return collected.join("\n");
+}
+
 export function analyzeScript(
   scriptId: number,
   scriptName: string,
@@ -165,25 +195,47 @@ export function analyzeScript(
 
   for (const def of TOPIC_DEFS) {
     const findings: Finding[] = [];
+    // Track which source lines are already covered by a finding to avoid duplication
+    const covered = new Set<number>();
 
     for (let i = 0; i < lines.length; i++) {
+      if (covered.has(i)) continue;
       const line = lines[i];
-      for (const pattern of def.patterns) {
-        if (pattern.test(line)) {
-          const trimmed = line.trim();
-          if (trimmed.length < 2) continue;
 
-          // Try to extract numeric value
-          const valMatch = line.match(/=\s*([\d.]+)/);
-          findings.push({
-            scriptId,
-            scriptName,
-            lineNumber: i + 1,
-            snippet: trimmed.slice(0, 200),
-            value: valMatch ? valMatch[1] : null,
-          });
-          break; // one finding per line
+      for (const pattern of def.patterns) {
+        if (!pattern.test(line)) continue;
+        const trimmed = line.trim();
+        if (trimmed.length < 2) break;
+
+        let snippet: string;
+        let endLine: number;
+
+        // If the line opens a Lua table block, capture the whole block
+        if (/\{\s*$/.test(trimmed)) {
+          snippet = captureBlock(lines, i);
+          endLine = i + snippet.split("\n").length - 1;
+        } else {
+          // Context window: a few lines before + after
+          const ctxStart = Math.max(0, i - 1);
+          endLine = Math.min(i + 6, lines.length - 1);
+          snippet = lines.slice(ctxStart, endLine + 1).join("\n");
         }
+
+        // Mark all covered lines
+        for (let k = i; k <= endLine; k++) covered.add(k);
+
+        // Truncate snippet to 1200 chars so DB stays sane
+        const truncated = snippet.length > 1200 ? snippet.slice(0, 1200) + "\n-- [truncated]" : snippet;
+
+        const valMatch = line.match(/=\s*([\d.]+)/);
+        findings.push({
+          scriptId,
+          scriptName,
+          lineNumber: i + 1,
+          snippet: truncated,
+          value: valMatch ? valMatch[1] : null,
+        });
+        break; // only one finding per line per topic
       }
     }
 
